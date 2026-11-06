@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -6,6 +7,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import dns.resolver
 import requests
 
 from erebyx.core.cli import run as cli_run
@@ -29,6 +31,12 @@ from erebyx.modules.indonesia.domain_id_lookup import (
     _classify_id_zone,
 )
 from erebyx.utils import output
+from erebyx.utils.dns_lookup import (
+    DEFAULT_NAMESERVERS,
+    DnsResult,
+    get_resolver,
+    reset_resolver,
+)
 
 
 class ModuleValidationTests(unittest.TestCase):
@@ -77,6 +85,50 @@ class ModuleValidationTests(unittest.TestCase):
         self.assertEqual(
             result.data["spoofing_protection"], "strong (SPF + enforced DMARC)"
         )
+        self.assertEqual(result.data["dns_status"], "OK")
+        self.assertNotIn("reason", result.data)
+
+    @patch("erebyx.modules.generic.email_check.resolve_records")
+    def test_email_dns_failure_sets_not_checked_and_failed_status(self, resolve):
+        resolve.return_value = DnsResult(
+            [], "cannot open /etc/resolv.conf", "RESOLVER_UNAVAILABLE"
+        )
+        result = EmailCheckModule().run("user@gmail.com")
+        self.assertTrue(result.success)
+        self.assertEqual(result.data["dns_status"], "FAILED")
+        self.assertEqual(result.data["reason"], "RESOLVER_UNAVAILABLE")
+        self.assertEqual(result.data["mx_records"], "NOT_CHECKED")
+        self.assertEqual(result.data["fallback_address_records"], "NOT_CHECKED")
+        self.assertEqual(result.data["spf_records"], "NOT_CHECKED")
+        self.assertEqual(result.data["dmarc_records"], "NOT_CHECKED")
+        self.assertEqual(result.data["spoofing_protection"], "NOT_CHECKED")
+        self.assertIsNone(result.data["domain_has_mail_route"])
+        self.assertIn("cannot open /etc/resolv.conf", result.data["warning"])
+
+    def test_resolver_fallback_on_missing_resolv_conf(self):
+        reset_resolver()
+        try:
+            with patch(
+                "dns.resolver.Resolver",
+                side_effect=[
+                    dns.resolver.NoResolverConfiguration("cannot open /etc/resolv.conf"),
+                    dns.resolver.Resolver(configure=False),
+                ],
+            ):
+                r = get_resolver(force_refresh=True)
+                self.assertEqual(r.nameservers, DEFAULT_NAMESERVERS)
+        finally:
+            reset_resolver()
+
+    def test_resolver_custom_env_servers(self):
+        reset_resolver()
+        os.environ["EREBYX_DNS_SERVERS"] = "1.0.0.1, 9.9.9.9"
+        try:
+            r = get_resolver(force_refresh=True)
+            self.assertEqual(r.nameservers, ["1.0.0.1", "9.9.9.9"])
+        finally:
+            del os.environ["EREBYX_DNS_SERVERS"]
+            reset_resolver()
 
     def test_username_module_is_local_only(self):
         module = UsernameCheckModule()

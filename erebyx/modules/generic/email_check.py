@@ -4,7 +4,7 @@ import re
 
 from erebyx.core.module_base import ModuleResult, OSINTModule
 from erebyx.i18n import t
-from erebyx.utils.dns_lookup import resolve_records
+from erebyx.utils.dns_lookup import classify_dns_error, resolve_records
 
 DISPOSABLE_DOMAINS = {
     "10minutemail.com",
@@ -88,57 +88,149 @@ class EmailCheckModule(OSINTModule):
         is_role = base_mailbox.lower() in {r.lower() for r in ROLE_ACCOUNTS}
         is_disposable = domain in DISPOSABLE_DOMAINS
 
-        mx_records, mx_error = resolve_records(domain, "MX")
+        mx_res = resolve_records(domain, "MX")
+        mx_records, mx_error = mx_res
         fallback_records: list[str] = []
         fallback_error: str | None = None
+        fallback_reason: str | None = None
 
-        if not mx_records and not mx_error:
-            for record_type in ("A", "AAAA"):
-                records, error = resolve_records(domain, record_type)
-                fallback_records.extend(records)
-                if error:
-                    fallback_error = error
+        dns_status: str
+        dns_reason: str | None = None
+        mx_field: list[str] | str
+        fallback_field: list[str] | str = []
+        spf_field: list[str] | str = []
+        dmarc_field: list[str] | str = []
+        has_mail_route: bool | None = None
+        warning: str | None = None
+        spoofing_protection: str
 
-        if mx_records:
-            has_mail_route: bool | None = any(
+        if mx_error:
+            dns_status = "FAILED"
+            dns_reason = getattr(mx_res, "reason", None) or classify_dns_error(mx_error)
+            has_mail_route = None
+            warning = t("email.mx_failed", error=mx_error)
+            mx_field = "NOT_CHECKED"
+            fallback_field = "NOT_CHECKED"
+            spf_field = "NOT_CHECKED"
+            dmarc_field = "NOT_CHECKED"
+            spoofing_protection = "NOT_CHECKED"
+        elif mx_records:
+            dns_status = "OK"
+            dns_reason = None
+            mx_field = mx_records
+            fallback_field = []
+            has_mail_route = any(
                 record.split()[-1] != "." for record in mx_records
             )
             warning = None if has_mail_route else t("email.null_mx")
-        elif mx_error:
-            has_mail_route = None
-            warning = t("email.mx_failed", error=mx_error)
-        elif fallback_records:
-            has_mail_route = True
-            warning = t("email.mx_fallback")
-        elif fallback_error:
-            has_mail_route = None
-            warning = t("email.mx_fallback_error", error=fallback_error)
+            if has_mail_route:
+                txt_res = resolve_records(domain, "TXT")
+                txt_records, txt_error = txt_res
+                if txt_error:
+                    spf_field = "NOT_CHECKED"
+                else:
+                    spf_field = [
+                        r.strip('"')
+                        for r in txt_records
+                        if r.strip('"').lower().startswith("v=spf1")
+                    ]
+
+                dmarc_res = resolve_records(f"_dmarc.{domain}", "TXT")
+                raw_dmarc, dmarc_error = dmarc_res
+                if dmarc_error and dmarc_error not in (
+                    t("dns.nxdomain"),
+                    "domain does not exist",
+                    "domain tidak ditemukan",
+                ):
+                    dmarc_field = "NOT_CHECKED"
+                else:
+                    dmarc_field = [
+                        r.strip('"')
+                        for r in raw_dmarc
+                        if "v=dmarc1" in r.lower()
+                    ]
+
+                if spf_field == "NOT_CHECKED" or dmarc_field == "NOT_CHECKED":
+                    spoofing_protection = "NOT_CHECKED"
+                else:
+                    spoofing_protection = _evaluate_spoofing_protection(
+                        spf_field, dmarc_field
+                    )
+            else:
+                spf_field = []
+                dmarc_field = []
+                spoofing_protection = t("spoof.not_applicable")
         else:
-            has_mail_route = False
-            warning = t("email.no_route")
+            for record_type in ("A", "AAAA"):
+                f_res = resolve_records(domain, record_type)
+                records, error = f_res
+                fallback_records.extend(records)
+                if error:
+                    fallback_error = error
+                    fallback_reason = getattr(f_res, "reason", None) or classify_dns_error(error)
 
-        spf_records: list[str] = []
-        dmarc_records: list[str] = []
-        spoofing_protection = t("spoof.not_applicable")
+            if fallback_records:
+                dns_status = "OK"
+                dns_reason = None
+                has_mail_route = True
+                warning = t("email.mx_fallback")
+                mx_field = []
+                fallback_field = fallback_records
 
-        if has_mail_route:
-            txt_records, _ = resolve_records(domain, "TXT")
-            spf_records = [
-                r.strip('"')
-                for r in txt_records
-                if r.strip('"').lower().startswith("v=spf1")
-            ]
-            raw_dmarc, _ = resolve_records(f"_dmarc.{domain}", "TXT")
-            dmarc_records = [
-                r.strip('"')
-                for r in raw_dmarc
-                if "v=dmarc1" in r.lower()
-            ]
-            spoofing_protection = _evaluate_spoofing_protection(
-                spf_records, dmarc_records
-            )
+                txt_res = resolve_records(domain, "TXT")
+                txt_records, txt_error = txt_res
+                if txt_error:
+                    spf_field = "NOT_CHECKED"
+                else:
+                    spf_field = [
+                        r.strip('"')
+                        for r in txt_records
+                        if r.strip('"').lower().startswith("v=spf1")
+                    ]
 
-        data = {
+                dmarc_res = resolve_records(f"_dmarc.{domain}", "TXT")
+                raw_dmarc, dmarc_error = dmarc_res
+                if dmarc_error and dmarc_error not in (
+                    t("dns.nxdomain"),
+                    "domain does not exist",
+                    "domain tidak ditemukan",
+                ):
+                    dmarc_field = "NOT_CHECKED"
+                else:
+                    dmarc_field = [
+                        r.strip('"')
+                        for r in raw_dmarc
+                        if "v=dmarc1" in r.lower()
+                    ]
+
+                if spf_field == "NOT_CHECKED" or dmarc_field == "NOT_CHECKED":
+                    spoofing_protection = "NOT_CHECKED"
+                else:
+                    spoofing_protection = _evaluate_spoofing_protection(
+                        spf_field, dmarc_field
+                    )
+            elif fallback_error:
+                dns_status = "FAILED"
+                dns_reason = fallback_reason or classify_dns_error(fallback_error)
+                has_mail_route = None
+                warning = t("email.mx_fallback_error", error=fallback_error)
+                mx_field = []
+                fallback_field = "NOT_CHECKED"
+                spf_field = "NOT_CHECKED"
+                dmarc_field = "NOT_CHECKED"
+                spoofing_protection = "NOT_CHECKED"
+            else:
+                dns_status = "OK"
+                dns_reason = None
+                has_mail_route = False
+                warning = t("email.no_route")
+                mx_field = []
+                fallback_field = []
+                spf_field = []
+                dmarc_field = []
+                spoofing_protection = t("spoof.not_applicable")
+
+        data: dict[str, object] = {
             "format_valid": True,
             "local_part": local_part,
             "base_mailbox": base_mailbox,
@@ -146,15 +238,21 @@ class EmailCheckModule(OSINTModule):
             "is_role_account": is_role,
             "is_disposable_provider": is_disposable,
             "domain": domain,
-            "mx_records": mx_records,
+            "dns_status": dns_status,
+        }
+        if dns_reason:
+            data["reason"] = dns_reason
+
+        data.update({
+            "mx_records": mx_field,
             "domain_has_mail_route": has_mail_route,
-            "fallback_address_records": fallback_records,
-            "spf_records": spf_records,
-            "dmarc_records": dmarc_records,
+            "fallback_address_records": fallback_field,
+            "spf_records": spf_field,
+            "dmarc_records": dmarc_field,
             "spoofing_protection": spoofing_protection,
             "warning": warning,
             "note": t("email.note"),
-        }
+        })
 
         return self._success(target=target, data=data)
 
