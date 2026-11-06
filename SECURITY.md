@@ -18,7 +18,7 @@ Kami sangat menjaga keamanan, stabilitas, dan etika penggunaan **Erebyx**. Harap
 
 Semua temuan **kritis, fatal, atau terkait keamanan** WAJIB dilaporkan secara **privat** langsung ke email pribadi pengembang:
 
-- **Email Pengembang:** [ronancalloway@gmail.com](mailto:ronancalloway@gmail.com)
+- **Email Pengembang:** [ronancalloway7@gmail.com](mailto:ronancalloway7@gmail.com)
 - **Subjek Email:** `[EREBYX SECURITY / CRITICAL BUG] Ringkasan Singkat Temuan`
 
 #### Informasi yang Perlu Disertakan dalam Email:
@@ -53,7 +53,7 @@ You are **STRICTLY PROHIBITED** from opening a public GitHub Issue, public Pull 
 
 All **security vulnerabilities, critical bugs, or fatal defects** MUST be reported **privately** via direct email to the developer:
 
-- **Developer Email:** [ronancalloway@gmail.com](mailto:ronancalloway@gmail.com)
+- **Developer Email:** [ronancalloway7@gmail.com](mailto:ronancalloway7@gmail.com)
 - **Suggested Subject Line:** `[EREBYX SECURITY / CRITICAL BUG] Short Summary of Finding`
 
 #### What to Include in Your Private Report:
