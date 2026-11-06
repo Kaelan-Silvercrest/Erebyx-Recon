@@ -1,0 +1,28 @@
+# Generated Python files and environments
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Test and tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OSINT results and local scan output (may contain sensitive target data)
+output/
+
+# Local credentials and machine-specific settings
+config/settings.yaml
+
+# Repository metadata and editor/OS files
+.git/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

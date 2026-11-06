@@ -1,0 +1,8 @@
+# requirements.txt
+#
+# Install dengan: pip install -r requirements.txt --break-system-packages
+# (atau pakai virtualenv/pipx sesuai preferensi kamu)
+
+requests>=2.31.0
+PyYAML>=6.0
+dnspython>=2.6.1

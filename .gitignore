@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Hasil scan & cache lokal — jangan dicommit (bisa berisi data sensitif
+# hasil riset target)
+output/*
+erebyx-output/
+build/
+dist/
+!output/.gitkeep
+data/*
+!data/.gitkeep
+
+# Config dengan API key asli — jangan pernah commit ini
+config/settings.yaml
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
